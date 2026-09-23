@@ -1,0 +1,1025 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hệ thống quản lí và điều khiển máy lạnh</title>
+
+  <!-- MQTT.js -->
+  <script src="https://unpkg.com/mqtt@5.10.3/dist/mqtt.min.js"></script>
+
+  <style>
+    :root{
+      --bg:#f6f8fc;
+      --card:#ffffff;
+      --text:#13203a;
+      --sub:#64748b;
+      --border:#cbd5e1;
+      --primary:#2563eb;
+      --primary-dark:#1d4ed8;
+      --green:#16a34a;
+      --red:#dc2626;
+      --orange:#f97316;
+      --orange-dark:#ea580c;
+      --navy:#0f172a;
+      --shadow:0 5px 14px rgba(15,23,42,.07);
+    }
+
+    *{box-sizing:border-box}
+
+    body{
+      margin:0;
+      font-family:Arial,Helvetica,sans-serif;
+      background:var(--bg);
+      color:var(--text);
+      transition:.2s;
+    }
+
+    body.dark{
+      --bg:#0f141b;
+      --card:#171d25;
+      --text:#f1f5f9;
+      --sub:#94a3b8;
+      --border:#334155;
+      --shadow:0 7px 18px rgba(0,0,0,.28);
+    }
+
+    header{
+      background:var(--card);
+      border-top:2px solid #334155;
+      border-bottom:1px solid var(--border);
+    }
+
+    .header-container{
+      width:100%;
+      padding:10px 24px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:18px;
+    }
+
+    .logo-section{
+      display:flex;
+      align-items:center;
+      gap:12px;
+      min-width:0;
+    }
+
+    .logo-icon{
+      width:43px;
+      height:43px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      background:#2563eb;
+      color:#fff;
+      border-radius:12px;
+      font-size:23px;
+      box-shadow:0 4px 9px rgba(37,99,235,.22);
+      flex:none;
+    }
+
+    h1{
+      margin:0 0 2px;
+      font-size:18px;
+      line-height:1.2;
+      font-weight:800;
+      text-transform:uppercase;
+      white-space:nowrap;
+    }
+
+    .subtitle{
+      color:var(--sub);
+      font-size:12px;
+    }
+
+    .header-actions{
+      display:flex;
+      align-items:center;
+      justify-content:flex-end;
+      gap:7px;
+      flex-wrap:wrap;
+    }
+
+    button{
+      font:inherit;
+      cursor:pointer;
+      transition:background 0.15s, filter 0.15s, border-color 0.15s;
+    }
+
+    .header-btn,
+    .btn-add-room{
+      border:1px solid #cbd5e1;
+      background:var(--card);
+      color:var(--text);
+      border-radius:10px;
+      padding:8px 12px;
+      font-size:12px;
+      font-weight:700;
+    }
+
+    .header-btn:hover{
+      border-color:#94a3b8;
+      background:#f8fafc;
+    }
+
+    body.dark .header-btn:hover{
+      background:#202936;
+    }
+
+    .btn-add-room{
+      background:var(--primary);
+      color:#fff;
+      border-color:var(--primary);
+      padding:10px 15px;
+      box-shadow:0 3px 8px rgba(37,99,235,.18);
+    }
+
+    .btn-add-room:hover{
+      background:var(--primary-dark);
+    }
+
+    .badge{
+      padding:7px 10px;
+      border-radius:999px;
+      font-size:11px;
+      font-weight:700;
+      white-space:nowrap;
+      border:1px solid transparent;
+    }
+
+    .badge-connecting{
+      background:#f8fafc;
+      color:#475569;
+      border-color:#cbd5e1;
+    }
+
+    .badge-connected{
+      background:#ecfdf3;
+      color:#15803d;
+      border-color:#a7f3d0;
+    }
+
+    .badge-disconnected{
+      background:#fef2f2;
+      color:#b91c1c;
+      border-color:#fecaca;
+    }
+
+    main{
+      width:100%;
+      padding:22px 24px 85px;
+    }
+
+    .room-action-bar{
+      width:100%;
+      min-height:68px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:15px;
+      padding:12px 18px;
+      margin-bottom:22px;
+      background:var(--card);
+      border:1px solid var(--border);
+      border-radius:15px;
+      box-shadow:0 2px 8px rgba(15,23,42,.03);
+    }
+
+    .room-action-info h2{
+      margin:0;
+      font-size:16px;
+      display:flex;
+      align-items:center;
+      gap:8px;
+      flex-wrap:wrap;
+    }
+
+    .room-number-tag,
+    .brand-tag,
+    .power-tag{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      border-radius:6px;
+      padding:3px 7px;
+      font-size:10px;
+      font-weight:700;
+      line-height:1;
+    }
+
+    .room-number-tag{
+      background:#e8efff;
+      color:#2854c5;
+    }
+
+    .brand-tag{
+      background:#eef2ff;
+      color:#4338ca;
+    }
+
+    .power-tag.on{
+      background:#dcfce7;
+      color:#166534;
+    }
+
+    .power-tag.off{
+      background:#f1f5f9;
+      color:#64748b;
+    }
+
+    body.dark .room-number-tag{background:#172554;color:#bfdbfe}
+    body.dark .brand-tag{background:#312e81;color:#ddd6fe}
+    body.dark .power-tag.off{background:#273244;color:#cbd5e1}
+
+    .room-grid{
+      display:grid;
+      gap:16px;
+      width:100%;
+    }
+
+    .room-grid.cols-1{ grid-template-columns: 1fr; }
+    .room-grid.cols-2{ grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .room-grid.cols-3{ grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .room-grid.cols-4{ grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .room-grid.cols-5{ grid-template-columns: repeat(5, minmax(0, 1fr)); }
+
+    .room-card{
+      min-width:0;
+      background:var(--card);
+      border:1px solid var(--border);
+      border-radius:15px;
+      padding:14px;
+      box-shadow:var(--shadow);
+      display:flex;
+      flex-direction:column;
+      justify-content:space-between;
+      min-height:280px;
+      transition:transform .15s,box-shadow .15s,border-color .15s;
+    }
+
+    .room-card:hover{
+      transform:translateY(-2px);
+      box-shadow:0 9px 22px rgba(15,23,42,.10);
+      border-color:#b7c4d6;
+    }
+
+    .card-top{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:8px;
+    }
+
+    .tag-group{
+      display:flex;
+      gap:5px;
+      align-items:center;
+      flex-wrap:wrap;
+    }
+
+    .btn-delete-card{
+      border:0;
+      background:transparent;
+      font-size:16px;
+      padding:4px;
+      opacity:.75;
+    }
+
+    .btn-delete-card:hover{opacity:1}
+
+    .room-name-row{
+      margin:12px 0 10px;
+    }
+
+    .room-name-text{
+      font-size:16px;
+      font-weight:800;
+      cursor:pointer;
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+    }
+
+    .room-name-text:hover{
+      color:var(--primary);
+    }
+
+    .power-buttons{
+      display:grid;
+      grid-template-columns:1fr 1fr;
+      gap:7px;
+      margin-top:8px;
+    }
+
+    .btn{
+      border:1px solid var(--border);
+      border-radius:99px;
+      padding:9px 7px;
+      font-size:12px;
+      font-weight:800;
+    }
+
+    .btn-on{
+      background:#16a34a;
+      color:#fff;
+      border-color:#16a34a;
+    }
+
+    .btn-off{
+      background:#dc2626;
+      color:#fff;
+      border-color:#dc2626;
+    }
+
+    .btn-on:hover{background:#15803d}
+    .btn-off:hover{background:#b91c1c}
+
+    .temp-control-wrap{
+      display:grid;
+      grid-template-columns:42px 1fr 42px;
+      align-items:center;
+      gap:7px;
+      margin-top:12px;
+      padding:10px;
+      background:#f4f7fb;
+      border:1px solid var(--border);
+      border-radius:11px;
+    }
+
+    body.dark .temp-control-wrap{
+      background:#1b2430;
+    }
+
+    .btn-temp{
+      height:38px;
+      padding:0;
+      font-size:23px;
+      background:#2563eb;
+      color:#fff;
+      border-color:#2563eb;
+      border-radius:99px;
+    }
+
+    .btn-temp:hover{background:#1d4ed8}
+
+    .temp-display-center{text-align:center}
+    .current-temp{font-size:25px;font-weight:800;line-height:1}
+    .temp-caption{font-size:9px;color:var(--sub);margin-top:5px}
+
+    .secondary-controls{
+      display:grid;
+      grid-template-columns:1fr 1fr;
+      gap:7px;
+      margin-top:12px;
+    }
+
+    .btn-toggle-feature{
+      padding:9px 5px;
+      font-size:11px;
+      font-weight:700;
+      white-space:nowrap;
+      border-radius:99px;
+      border:1px solid transparent;
+    }
+
+    .feature-off{
+      background:#0f172a;
+      color:#94a3b8;
+      border-color:#334155;
+    }
+
+    .feature-off:hover{
+      background:#1e293b;
+      color:#cbd5e1;
+      border-color:#475569;
+    }
+
+    .quick-on{
+      background:#1d4ed8;
+      color:#ffffff;
+      border-color:#2563eb;
+      box-shadow:0 2px 8px rgba(37,99,235,0.3);
+    }
+
+    .quick-on:hover{
+      filter:brightness(1.18);
+      background:#2563eb;
+    }
+
+    .swing-on{
+      background:#ea580c;
+      color:#ffffff;
+      border-color:#f97316;
+      box-shadow:0 2px 8px rgba(249,115,22,0.3);
+    }
+
+    .swing-on:hover{
+      filter:brightness(1.18);
+      background:#f97316;
+    }
+
+    .status-footer-line{
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:8px;
+      margin-top:10px;
+      padding-top:8px;
+      border-top:1px solid var(--border);
+      color:var(--sub);
+      font-size:9px;
+    }
+
+    .status-footer-line span:first-child{
+      overflow:hidden;
+      text-overflow:ellipsis;
+      white-space:nowrap;
+    }
+
+    footer{
+      position:fixed;
+      left:0;
+      right:0;
+      bottom:0;
+      text-align:center;
+      color:var(--sub);
+      background:var(--card);
+      border-top:1px solid var(--border);
+      font-size:11px;
+      padding:10px 20px;
+      z-index:4;
+    }
+
+    .modal-overlay{
+      display:none;
+      position:fixed;
+      inset:0;
+      background:rgba(0,0,0,.55);
+      z-index:20;
+      align-items:center;
+      justify-content:center;
+      padding:20px;
+    }
+
+    .modal-overlay.open{display:flex}
+
+    .modal-box{
+      width:min(480px,100%);
+      background:var(--card);
+      border:1px solid var(--border);
+      border-radius:16px;
+      padding:20px;
+      max-height:85vh;
+      display:flex;
+      flex-direction:column;
+    }
+
+    .modal-box h3{margin-top:0; margin-bottom:6px;}
+
+    .input-field{
+      width:100%;
+      padding:10px;
+      border:1px solid var(--border);
+      border-radius:99px;
+      background:var(--card);
+      color:var(--text);
+      font-size:14px;
+      margin-top:10px;
+    }
+
+    .history-list{
+      margin-top:10px;
+      overflow-y:auto;
+      max-height:350px;
+      border:1px solid var(--border);
+      border-radius:10px;
+      padding:10px;
+      background:rgba(100,116,139,.03);
+    }
+
+    .history-item{
+      padding:8px;
+      border-bottom:1px solid var(--border);
+      font-size:12px;
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      gap:10px;
+    }
+
+    .history-item:last-child{border-bottom:none}
+    .history-time{font-size:10px;color:var(--sub);white-space:nowrap}
+    .history-text{font-weight:600}
+
+    #toastContainer{
+      position:fixed;
+      bottom:50px;
+      right:20px;
+      z-index:99;
+      display:flex;
+      flex-direction:column;
+      gap:8px;
+    }
+
+    .toast{
+      background:var(--navy);
+      color:#fff;
+      padding:10px 16px;
+      border-radius:10px;
+      font-size:13px;
+      font-weight:600;
+      box-shadow:0 4px 12px rgba(0,0,0,0.25);
+      animation:fadeIn 0.2s ease;
+    }
+
+    @keyframes fadeIn {
+      from { opacity:0; transform:translateY(10px); }
+      to { opacity:1; transform:translateY(0); }
+    }
+
+    @media (max-width:980px){
+      .room-grid.cols-4, .room-grid.cols-5 { grid-template-columns: repeat(3, minmax(0,1fr)) !important; }
+    }
+    @media (max-width:720px){
+      .header-container, .room-action-bar{ align-items:flex-start; flex-direction:column; }
+      h1{white-space:normal}
+      .header-actions{justify-content:flex-start}
+      .header-actions .badge{order:-1}
+      .room-grid.cols-3, .room-grid.cols-4, .room-grid.cols-5 { grid-template-columns: repeat(2, minmax(0,1fr)) !important; }
+      main{padding-left:14px;padding-right:14px}
+    }
+    @media (max-width:480px){
+      .room-grid { grid-template-columns: 1fr !important; }
+    }
+  </style>
+</head>
+
+<body>
+<header>
+  <div class="header-container">
+    <div class="logo-section">
+      <div class="logo-icon">❄️</div>
+      <div>
+        <h1>Hệ thống quản lí và điều khiển máy lạnh</h1>
+        <div class="subtitle">Điều khiển máy lạnh Funiki độc lập qua MQTT</div>
+      </div>
+    </div>
+    <div class="header-actions">
+      <span class="badge badge-connecting" id="mqttBadge">Đang kết nối MQTT...</span>
+      <button class="header-btn" onclick="openHistoryModal()">📜 Lịch sử</button>
+      <button class="header-btn" onclick="reconnectMqtt()">🔄 Kết nối lại</button>
+      <button class="header-btn" onclick="toggleDarkMode()">🌓 Giao diện</button>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="room-action-bar">
+    <div class="room-action-info">
+      <h2>
+        <span>🏢 Danh sách máy lạnh Funiki</span>
+        <span class="room-number-tag" id="roomCountBadge">2 phòng</span>
+      </h2>
+    </div>
+    <button class="btn-add-room" onclick="addNewRoom()" id="btnAddRoom">➕ Thêm phòng 3</button>
+  </div>
+
+  <div class="room-grid" id="roomGrid"></div>
+</main>
+
+<footer>
+  Hệ thống quản lí và điều khiển máy lạnh Funiki qua MQTT
+</footer>
+
+<!-- Container Toast Thông Báo -->
+<div id="toastContainer"></div>
+
+<!-- Modal xem Lịch sử -->
+<div class="modal-overlay" id="historyModal" onclick="closeModal('historyModal', event)">
+  <div class="modal-box" onclick="event.stopPropagation()">
+    <h3>📜 Lịch sử thao tác hệ thống</h3>
+    <div class="subtitle">Danh sách các lệnh điều khiển và trạng thái đã ghi nhận.</div>
+
+    <div class="history-list" id="historyContainer">
+      <div style="text-align:center; padding:15px; color:var(--sub)">Chưa có lịch sử thao tác nào.</div>
+    </div>
+
+    <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:16px;">
+      <button class="header-btn" onclick="confirmClearHistory()">🗑️ Xoá lịch sử</button>
+      <button class="header-btn primary" style="background:var(--primary); color:white; border-color:var(--primary);" onclick="closeModal('historyModal')">Đóng</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Đổi Tên Phòng -->
+<div class="modal-overlay" id="renameModal" onclick="closeModal('renameModal', event)">
+  <div class="modal-box" onclick="event.stopPropagation()">
+    <h3>✏️ Đổi tên phòng</h3>
+    <div class="subtitle">Nhập tên mới hiển thị cho thiết bị này:</div>
+    <input type="text" id="renameInput" class="input-field" placeholder="Nhập tên phòng...">
+    <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:16px;">
+      <button class="header-btn" onclick="closeModal('renameModal')">Hủy</button>
+      <button class="header-btn primary" style="background:var(--primary); color:white; border-color:var(--primary);" onclick="saveRename()">Lưu thay đổi</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Xác Nhận (Confirm Modal) -->
+<div class="modal-overlay" id="confirmModal" onclick="closeModal('confirmModal', event)">
+  <div class="modal-box" onclick="event.stopPropagation()">
+    <h3 id="confirmTitle">Xác nhận</h3>
+    <div class="subtitle" id="confirmMessage" style="font-size:14px; margin-top:5px; color:var(--text);">Bạn có chắc chắn muốn thực hiện thao tác này?</div>
+    <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:20px;">
+      <button class="header-btn" onclick="closeModal('confirmModal')">Hủy</button>
+      <button class="header-btn" style="background:var(--red); color:white; border-color:var(--red);" id="confirmActionBtn">Thực hiện</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  // TOPIC MQTT LƯU DỮ LIỆU ĐỒNG BỘ REALTIME TOÀN CẦU
+  const TOPIC_SYNC_ROOMS = "truong/funiki/global/rooms_config";
+  const TOPIC_SYNC_HISTORY = "truong/funiki/global/history_logs";
+
+  const LOCAL_ROOMS_KEY = 'funiki_rooms_data_v3';
+  const LOCAL_STATUS_KEY = 'funiki_room_status_v3';
+  const LOCAL_HISTORY_KEY = 'funiki_history_logs_v3';
+
+  let rooms = JSON.parse(localStorage.getItem(LOCAL_ROOMS_KEY)) || {
+    room_1:{key:'room_1',roomNumber:1,name:'Phòng 1',brand:'Funiki',controlTopic:'truong/funiki/1/control',statusTopic:'truong/funiki/1/status',quickCoolCommand:'quickcool'},
+    room_2:{key:'room_2',roomNumber:2,name:'Phòng 2',brand:'Funiki',controlTopic:'truong/funiki/2/control',statusTopic:'truong/funiki/2/status',quickCoolCommand:'quickcool'}
+  };
+
+  let roomStatuses = JSON.parse(localStorage.getItem(LOCAL_STATUS_KEY)) || {
+    room_1:{power:'off',temp:null,swing:'off',quickCool:false},
+    room_2:{power:'off',temp:null,swing:'off',quickCool:false}
+  };
+
+  let actionHistory = JSON.parse(localStorage.getItem(LOCAL_HISTORY_KEY)) || [];
+  let currentEditingKey = null;
+
+  let client = null, isMqttConnected = false;
+
+  function $(id){ return document.getElementById(id); }
+
+  function showToast(msg){
+    const container = $('toastContainer');
+    const toast = document.createElement('div');
+    toast.className = 'toast';
+    toast.textContent = msg;
+    container.appendChild(toast);
+    setTimeout(() => toast.remove(), 3000);
+  }
+
+  window.closeModal = function(id, e){
+    if(!e || e.target === $(id))$(id).classList.remove('open');
+  };
+
+  function addHistoryLog(text, publishToMqtt = true){
+    const timeStr = new Date().toLocaleTimeString('vi-VN') + ' ' + new Date().toLocaleDateString('vi-VN');
+    actionHistory.unshift({ text, time: timeStr });
+    if(actionHistory.length > 50) actionHistory.pop();
+    localStorage.setItem(LOCAL_HISTORY_KEY, JSON.stringify(actionHistory));
+    
+    if(publishToMqtt && client && isMqttConnected){
+      client.publish(TOPIC_SYNC_HISTORY, JSON.stringify(actionHistory), { qos: 0, retain: true });
+    }
+  }
+
+  window.openHistoryModal = function(){
+    renderHistory();
+    $('historyModal').classList.add('open');
+  };
+
+  function confirmClearHistory(){
+    $('confirmTitle').textContent = '🗑️ Xóa lịch sử';
+    $('confirmMessage').textContent = 'Bạn có chắc chắn muốn xóa toàn bộ lịch sử thao tác không?';
+    $('confirmActionBtn').onclick = function(){
+      actionHistory = [];
+      localStorage.setItem(LOCAL_HISTORY_KEY, JSON.stringify(actionHistory));
+      if(client && isMqttConnected){
+        client.publish(TOPIC_SYNC_HISTORY, JSON.stringify([]), { qos: 0, retain: true });
+      }
+      renderHistory();
+      closeModal('confirmModal');
+      showToast('Đã xóa lịch sử thao tác!');
+    };
+    $('confirmModal').classList.add('open');
+  }
+
+  function renderHistory(){
+    const container = $('historyContainer');
+    if(!actionHistory || actionHistory.length === 0){
+      container.innerHTML = `<div style="text-align:center; padding:15px; color:var(--sub)">Chưa có lịch sử thao tác nào.</div>`;
+      return;
+    }
+    container.innerHTML = actionHistory.map(item => `
+      <div class="history-item">
+        <span class="history-text">${escapeHtml(item.text)}</span>
+        <span class="history-time">${item.time}</span>
+      </div>
+    `).join('');
+  }
+
+  function getNextAvailableRoomNumber(){
+    const nums = Object.values(rooms).map(r => Number(r.roomNumber) || 1);
+    const used = new Set(nums); let n = 1;
+    while(used.has(n)) n++;
+    return n;
+  }
+
+  function saveState(publishGlobal = true){
+    renderRooms();
+    localStorage.setItem(LOCAL_ROOMS_KEY, JSON.stringify(rooms));
+    localStorage.setItem(LOCAL_STATUS_KEY, JSON.stringify(roomStatuses));
+
+    if(publishGlobal && client && isMqttConnected){
+      client.publish(TOPIC_SYNC_ROOMS, JSON.stringify(rooms), { qos: 0, retain: true });
+    }
+  }
+
+  /* LẮNG NGHE ĐỒNG BỘ GIỮA CÁC TAB CÙNG TRÌNH DUYỆT */
+  window.addEventListener('storage', (e) => {
+    if ([LOCAL_ROOMS_KEY, LOCAL_STATUS_KEY, LOCAL_HISTORY_KEY].includes(e.key)) {
+      rooms = JSON.parse(localStorage.getItem(LOCAL_ROOMS_KEY)) || {};
+      roomStatuses = JSON.parse(localStorage.getItem(LOCAL_STATUS_KEY)) || {};
+      actionHistory = JSON.parse(localStorage.getItem(LOCAL_HISTORY_KEY)) || [];
+      renderRooms();
+      if ($('historyModal').classList.contains('open')) renderHistory();
+      updateSubscriptions();
+    }
+  });
+
+  window.addNewRoom = function(){
+    const n = getNextAvailableRoomNumber(), key = 'room_' + n;
+    rooms[key] = {
+      key, roomNumber: n, name: 'Phòng ' + n, brand: 'Funiki',
+      controlTopic: `truong/funiki/${n}/control`,
+      statusTopic: `truong/funiki/${n}/status`,
+      quickCoolCommand: 'quickcool'
+    };
+    roomStatuses[key] = { power: 'off', temp: null, swing: 'off', quickCool: false };
+    addHistoryLog(`➕ Thêm thiết bị mới: Phòng ${n}`);
+    saveState();
+    updateSubscriptions();
+    showToast(`Đã thêm Phòng ${n}`);
+  };
+
+  window.deleteRoom = function(key){
+    if(Object.keys(rooms).length <= 1){ 
+      showToast('Hệ thống cần ít nhất 1 phòng máy lạnh!'); 
+      return; 
+    }
+    const room = rooms[key];
+    $('confirmTitle').textContent = '🗑️ Xóa thiết bị';
+    $('confirmMessage').textContent = `Bạn có chắc muốn xoá ${room.name}?`;
+    $('confirmActionBtn').onclick = function(){
+      addHistoryLog(`🗑️ Xóa thiết bị: ${room.name}`);
+      delete rooms[key]; delete roomStatuses[key];
+      saveState(); updateSubscriptions();
+      closeModal('confirmModal');
+      showToast(`Đã xóa ${room.name}`);
+    };
+    $('confirmModal').classList.add('open');
+  };
+
+  window.renameRoom = function(key){
+    currentEditingKey = key;
+    $('renameInput').value = rooms[key].name;
+    $('renameModal').classList.add('open');
+    setTimeout(() => $('renameInput').focus(), 100);
+  };
+
+  window.saveRename = function(){
+    const name = $('renameInput').value.trim();
+    if(name && currentEditingKey && rooms[currentEditingKey]){
+      const oldName = rooms[currentEditingKey].name;
+      if(name !== oldName){
+        addHistoryLog(`✏️ Đổi tên ${oldName} ➔ ${name}`);
+        rooms[currentEditingKey].name = name;
+        saveState();
+        showToast(`Đã đổi tên thành ${name}`);
+      }
+    }
+    closeModal('renameModal');
+  };
+
+  function renderRooms(){
+    const sorted = Object.values(rooms).sort((a,b) => a.roomNumber - b.roomNumber);
+    const count = sorted.length;
+
+    $('roomCountBadge').textContent = `${count} phòng`;
+    $('btnAddRoom').textContent = `➕ Thêm phòng ${getNextAvailableRoomNumber()}`;
+
+    const gridEl = $('roomGrid');
+    const colsClass = `cols-${Math.min(count, 5)}`;
+    gridEl.className = `room-grid ${colsClass}`;
+
+    gridEl.innerHTML = sorted.map(room => {
+      const st = roomStatuses[room.key] || { power: 'off', temp: null, swing: 'off', quickCool: false };
+      const on = st.power === 'on', swing = st.swing === 'on', quick = Boolean(st.quickCool);
+      return `
+      <div class="room-card">
+        <div>
+          <div class="card-top">
+            <div class="tag-group">
+              <span class="room-number-tag">#${room.roomNumber}</span>
+              <span class="brand-tag">Funiki</span>
+              <span class="power-tag ${on?'on':'off'}">${on?'Bật':'Tắt'}</span>
+            </div>
+            ${sorted.length>1 ? `<button class="btn-delete-card" onclick="deleteRoom('${room.key}')">🗑️</button>` : ''}
+          </div>
+
+          <div class="room-name-row">
+            <span class="room-name-text" onclick="renameRoom('${room.key}')">✏️ ${escapeHtml(room.name)}</span>
+          </div>
+
+          <div class="power-buttons">
+            <button class="btn btn-on" onclick="sendPower('${room.key}','on')">⚡ Bật</button>
+            <button class="btn btn-off" onclick="sendPower('${room.key}','off')">🛑 Tắt</button>
+          </div>
+
+          <div class="temp-control-wrap">
+            <button class="btn btn-temp" onclick="changeTemp('${room.key}',-1)">−</button>
+            <div class="temp-display-center">
+              <div class="current-temp">${st.temp !== null && st.temp !== undefined ? st.temp+'°C' : '--°C'}</div>
+              <div class="temp-caption">Nhiệt độ ESP</div>
+            </div>
+            <button class="btn btn-temp" onclick="changeTemp('${room.key}',1)">+</button>
+          </div>
+        </div>
+
+        <div>
+          <div class="secondary-controls">
+            <button class="btn btn-toggle-feature ${swing?'swing-on':'feature-off'}" onclick="toggleSwing('${room.key}')">🌪️ Đảo gió</button>
+            <button class="btn btn-toggle-feature ${quick?'quick-on':'feature-off'}" onclick="toggleQuickCool('${room.key}')">⚡ Làm lạnh nhanh</button>
+          </div>
+          <div class="status-footer-line">
+            <span>${room.statusTopic}</span>
+            <span>${st.lastUpdated || 'Chưa có status'}</span>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
+  }
+
+  function markChanged(key, patch){
+    roomStatuses[key] = { ...(roomStatuses[key] || {}), ...patch, lastUpdated: new Date().toLocaleTimeString('vi-VN') + ' (Vừa gửi)' };
+    saveState();
+  }
+
+  window.sendPower = function(key, action){
+    const cur = roomStatuses[key] || {};
+    const name = rooms[key].name;
+    if(action === 'on'){
+      markChanged(key, { power: 'on', temp: cur.temp || 26 });
+      addHistoryLog(`⚡ Bật máy lạnh: ${name}`);
+    }else{
+      markChanged(key, { power: 'off', swing: 'off', quickCool: false });
+      addHistoryLog(`🛑 Tắt máy lạnh: ${name}`);
+    }
+    executeSendMqtt(key, action);
+  };
+
+  window.changeTemp = function(key, delta){
+    const cur = roomStatuses[key] || {};
+    const name = rooms[key].name;
+    const t = (cur.temp !== null && cur.temp !== undefined) ? Number(cur.temp) : (delta > 0 ? 25 : 26);
+    const next = Math.min(30, Math.max(16, t + delta));
+    const cmd = delta > 0 ? 'tempup' : 'tempdown';
+    markChanged(key, { power: 'on', temp: next });
+    addHistoryLog(`🌡️ Điều chỉnh nhiệt độ [${name}]: ${next}°C`);
+    executeSendMqtt(key, cmd);
+  };
+
+  window.toggleSwing = function(key){
+    const cur = roomStatuses[key] || {};
+    const name = rooms[key].name;
+    const next = cur.swing === 'on' ? 'off' : 'on';
+    markChanged(key, { swing: next, power: next === 'on' ? 'on' : cur.power });
+    addHistoryLog(`🌪️ Đảo gió [${name}]: ${next === 'on' ? 'Bật' : 'Tắt'}`);
+    executeSendMqtt(key, rooms[key].swingCommand || 'swing');
+  };
+
+  window.toggleQuickCool = function(key){
+    const cur = roomStatuses[key] || {};
+    const name = rooms[key].name;
+    const next = !Boolean(cur.quickCool);
+    markChanged(key, { quickCool: next, power: next ? 'on' : cur.power });
+    addHistoryLog(`⚡ Làm lạnh nhanh [${name}]: ${next ? 'Bật' : 'Tắt'}`);
+    executeSendMqtt(key, rooms[key].quickCoolCommand || 'quickcool');
+  };
+
+  function executeSendMqtt(key, cmd){
+    if(!client || !isMqttConnected){
+      showToast('⚠️ MQTT đang mất kết nối!');
+      return;
+    }
+    client.publish(rooms[key].controlTopic, cmd, { qos: 0 });
+  }
+
+  function connectMqtt(){
+    $('mqttBadge').className = 'badge badge-connecting';$('mqttBadge').textContent = 'Đang kết nối MQTT...';
+    const brokerUrl = 'wss://broker.hivemq.com:8884/mqtt';
+    const clientId = 'funiki_web_' + Math.random().toString(16).slice(2, 10);
+    try{ if(client) client.end(true); }catch(e){}
+    client = mqtt.connect(brokerUrl, { clientId, clean: true, connectTimeout: 10000, reconnectPeriod: 5000, keepalive: 30 });
+
+    client.on('connect', () => {
+      isMqttConnected = true;
+      $('mqttBadge').className = 'badge badge-connected';$('mqttBadge').textContent = '🟢 MQTT Đã kết nối';
+      
+      // Đăng ký nhận cấu hình danh sách phòng + lịch sử toàn cầu từ MQTT Broker
+      client.subscribe(TOPIC_SYNC_ROOMS, { qos: 0 });
+      client.subscribe(TOPIC_SYNC_HISTORY, { qos: 0 });
+      
+      updateSubscriptions();
+    });
+
+    client.on('error', () => {
+      isMqttConnected = false;
+      $('mqttBadge').className = 'badge badge-disconnected';$('mqttBadge').textContent = '🔴 Lỗi MQTT';
+    });
+
+    client.on('close', () => {
+      isMqttConnected = false;
+      $('mqttBadge').className = 'badge badge-disconnected';$('mqttBadge').textContent = '⚠️ Mất kết nối MQTT';
+    });
+
+    client.on('message', (topic, message) => {
+      const payload = message.toString();
+
+      // ĐỒNG BỘ DANH SÁCH PHÒNG TỪ CÁC THIẾT BỊ KHÁC
+      if(topic === TOPIC_SYNC_ROOMS){
+        try{
+          const remoteRooms = JSON.parse(payload);
+          if(remoteRooms && typeof remoteRooms === 'object' && Object.keys(remoteRooms).length > 0){
+            rooms = remoteRooms;
+            saveState(false); // Lưu local nhưng không publish lại
+            updateSubscriptions();
+          }
+        }catch(e){}
+        return;
+      }
+
+      // ĐỒNG BỘ LỊCH SỬ THAO TÁC TỪ CÁC THIẾT BỊ KHÁC
+      if(topic === TOPIC_SYNC_HISTORY){
+        try{
+          const remoteHistory = JSON.parse(payload);
+          if(Array.isArray(remoteHistory)){
+            actionHistory = remoteHistory;
+            localStorage.setItem(LOCAL_HISTORY_KEY, JSON.stringify(actionHistory));
+            if($('historyModal').classList.contains('open')) renderHistory();
+          }
+        }catch(e){}
+        return;
+      }
+
+      // LẮNG NGHE STATUS TỪ ESP CỦA TỪNG PHÒNG
+      const found = Object.values(rooms).find(r => r.statusTopic === topic);
+      if(!found) return;
+      try{
+        const data = JSON.parse(payload);
+        roomStatuses[found.key] = {
+          ...(roomStatuses[found.key] || {}),
+          power: data.power ?? roomStatuses[found.key].power,
+          temp: data.temp !== undefined ? Number(data.temp) : roomStatuses[found.key].temp,
+          swing: data.swing ?? roomStatuses[found.key].swing,
+          quickCool: data.quickCool !== undefined ? Boolean(data.quickCool) : roomStatuses[found.key].quickCool,
+          lastUpdated: new Date().toLocaleTimeString('vi-VN')
+        };
+      }catch(e){
+        const n = parseInt(payload, 10);
+        if(!isNaN(n)) roomStatuses[found.key].temp = n;
+      }
+      renderRooms();
+      saveState(false);
+    });
+  }
+
+  function updateSubscriptions(){
+    if(!client || !isMqttConnected) return;
+    Object.values(rooms).forEach(r => client.subscribe(r.statusTopic, { qos: 0 }));
+  }
+
+  window.reconnectMqtt = connectMqtt;
+
+  window.toggleDarkMode = function(){
+    document.body.classList.toggle('dark');
+    localStorage.setItem('funiki_ac_dark', document.body.classList.contains('dark'));
+  };
+
+  if(localStorage.getItem('funiki_ac_dark') === 'true') document.body.classList.add('dark');
+
+  // Khởi chạy
+  renderRooms();
+  connectMqtt();
+</script>
+</body>
+</html>
