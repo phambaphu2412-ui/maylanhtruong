@@ -5,6 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Hệ thống quản lí và điều khiển máy lạnh</title>
 
+  <!-- NẠP FONT CHỮ CHUẨN TIẾNG VIỆT KHÔNG BỊ LỖI -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
   <!-- MQTT.js -->
   <script src="https://unpkg.com/mqtt@5.10.3/dist/mqtt.min.js"></script>
 
@@ -29,10 +34,12 @@
 
     body{
       margin:0;
-      font-family:Arial,Helvetica,sans-serif;
+      font-family:'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       background:var(--bg);
       color:var(--text);
       transition:.2s;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
     }
 
     body.dark{
@@ -140,6 +147,42 @@
       background:var(--primary-dark);
     }
 
+    .batch-actions{
+      display:flex;
+      align-items:center;
+      gap:8px;
+      flex-wrap:wrap;
+    }
+
+    .btn-toggle-all{
+      border-radius:10px;
+      padding:10px 14px;
+      font-size:12px;
+      font-weight:700;
+      color:#fff;
+      transition: background 0.2s, border-color 0.2s, box-shadow 0.2s;
+    }
+
+    .btn-toggle-all.mode-on{
+      background:#16a34a;
+      border:1px solid #16a34a;
+      box-shadow:0 3px 8px rgba(22,163,74,.2);
+    }
+
+    .btn-toggle-all.mode-on:hover{
+      background:#15803d;
+    }
+
+    .btn-toggle-all.mode-off{
+      background:#dc2626;
+      border:1px solid #dc2626;
+      box-shadow:0 3px 8px rgba(220,38,38,.2);
+    }
+
+    .btn-toggle-all.mode-off:hover{
+      background:#b91c1c;
+    }
+
     .badge{
       padding:7px 10px;
       border-radius:999px;
@@ -147,6 +190,9 @@
       font-weight:700;
       white-space:nowrap;
       border:1px solid transparent;
+      display:inline-flex;
+      align-items:center;
+      gap:5px;
     }
 
     .badge-connecting{
@@ -165,6 +211,18 @@
       background:#fef2f2;
       color:#b91c1c;
       border-color:#fecaca;
+    }
+
+    .badge-online{
+      background:#eff6ff;
+      color:#1d4ed8;
+      border-color:#bfdbfe;
+    }
+
+    body.dark .badge-online{
+      background:#172554;
+      color:#93c5fd;
+      border-color:#1e40af;
     }
 
     main{
@@ -567,6 +625,7 @@
       </div>
     </div>
     <div class="header-actions">
+      <span class="badge badge-online" id="onlineBadge">👥 1 người online</span>
       <span class="badge badge-connecting" id="mqttBadge">Đang kết nối MQTT...</span>
       <button class="header-btn" onclick="openHistoryModal()">📜 Lịch sử</button>
       <button class="header-btn" onclick="reconnectMqtt()">🔄 Kết nối lại</button>
@@ -583,7 +642,11 @@
         <span class="room-number-tag" id="roomCountBadge">2 phòng</span>
       </h2>
     </div>
-    <button class="btn-add-room" onclick="addNewRoom()" id="btnAddRoom">➕ Thêm phòng 3</button>
+
+    <div class="batch-actions">
+      <button class="btn-toggle-all mode-on" id="btnToggleAll" onclick="toggleAllRooms()">⚡ Bật tất cả</button>
+      <button class="btn-add-room" onclick="addNewRoom()" id="btnAddRoom">➕ Thêm phòng 3</button>
+    </div>
   </div>
 
   <div class="room-grid" id="roomGrid"></div>
@@ -639,13 +702,14 @@
 </div>
 
 <script>
-  // TOPIC MQTT LƯU DỮ LIỆU ĐỒNG BỘ REALTIME TOÀN CẦU
   const TOPIC_SYNC_ROOMS = "truong/funiki/global/rooms_config";
+  const TOPIC_SYNC_STATUSES = "truong/funiki/global/statuses";
   const TOPIC_SYNC_HISTORY = "truong/funiki/global/history_logs";
+  const TOPIC_PRESENCE_PREFIX = "truong/funiki/presence/";
 
-  const LOCAL_ROOMS_KEY = 'funiki_rooms_data_v3';
-  const LOCAL_STATUS_KEY = 'funiki_room_status_v3';
-  const LOCAL_HISTORY_KEY = 'funiki_history_logs_v3';
+  const LOCAL_ROOMS_KEY = 'funiki_rooms_data_v5';
+  const LOCAL_STATUS_KEY = 'funiki_room_status_v5';
+  const LOCAL_HISTORY_KEY = 'funiki_history_logs_v5';
 
   let rooms = JSON.parse(localStorage.getItem(LOCAL_ROOMS_KEY)) || {
     room_1:{key:'room_1',roomNumber:1,name:'Phòng 1',brand:'Funiki',controlTopic:'truong/funiki/1/control',statusTopic:'truong/funiki/1/status',quickCoolCommand:'quickcool'},
@@ -659,6 +723,9 @@
 
   let actionHistory = JSON.parse(localStorage.getItem(LOCAL_HISTORY_KEY)) || [];
   let currentEditingKey = null;
+
+  let activeClients = new Map();
+  let myClientId = 'user_' + Math.random().toString(36).substring(2, 9);
 
   let client = null, isMqttConnected = false;
 
@@ -737,20 +804,9 @@
 
     if(publishGlobal && client && isMqttConnected){
       client.publish(TOPIC_SYNC_ROOMS, JSON.stringify(rooms), { qos: 0, retain: true });
+      client.publish(TOPIC_SYNC_STATUSES, JSON.stringify(roomStatuses), { qos: 0, retain: true });
     }
   }
-
-  /* LẮNG NGHE ĐỒNG BỘ GIỮA CÁC TAB CÙNG TRÌNH DUYỆT */
-  window.addEventListener('storage', (e) => {
-    if ([LOCAL_ROOMS_KEY, LOCAL_STATUS_KEY, LOCAL_HISTORY_KEY].includes(e.key)) {
-      rooms = JSON.parse(localStorage.getItem(LOCAL_ROOMS_KEY)) || {};
-      roomStatuses = JSON.parse(localStorage.getItem(LOCAL_STATUS_KEY)) || {};
-      actionHistory = JSON.parse(localStorage.getItem(LOCAL_HISTORY_KEY)) || [];
-      renderRooms();
-      if ($('historyModal').classList.contains('open')) renderHistory();
-      updateSubscriptions();
-    }
-  });
 
   window.addNewRoom = function(){
     const n = getNextAvailableRoomNumber(), key = 'room_' + n;
@@ -813,6 +869,18 @@
     $('roomCountBadge').textContent = `${count} phòng`;
     $('btnAddRoom').textContent = `➕ Thêm phòng ${getNextAvailableRoomNumber()}`;
 
+    const btnToggleAll = $('btnToggleAll');
+    if(btnToggleAll){
+      const hasAnyOff = sorted.some(r => (roomStatuses[r.key] || {}).power !== 'on');
+      if(hasAnyOff){
+        btnToggleAll.textContent = '⚡ Bật tất cả';
+        btnToggleAll.className = 'btn-toggle-all mode-on';
+      } else {
+        btnToggleAll.textContent = '🛑 Tắt tất cả';
+        btnToggleAll.className = 'btn-toggle-all mode-off';
+      }
+    }
+
     const gridEl = $('roomGrid');
     const colsClass = `cols-${Math.min(count, 5)}`;
     gridEl.className = `room-grid ${colsClass}`;
@@ -871,7 +939,7 @@
 
   function markChanged(key, patch){
     roomStatuses[key] = { ...(roomStatuses[key] || {}), ...patch, lastUpdated: new Date().toLocaleTimeString('vi-VN') + ' (Vừa gửi)' };
-    saveState();
+    saveState(true);
   }
 
   window.sendPower = function(key, action){
@@ -885,6 +953,29 @@
       addHistoryLog(`🛑 Tắt máy lạnh: ${name}`);
     }
     executeSendMqtt(key, action);
+  };
+
+  window.toggleAllRooms = function(){
+    const roomList = Object.values(rooms);
+    if(roomList.length === 0) return;
+
+    const hasAnyOff = roomList.some(r => (roomStatuses[r.key] || {}).power !== 'on');
+    const targetAction = hasAnyOff ? 'on' : 'off';
+    const actionText = hasAnyOff ? 'BẬT TẤT CẢ' : 'TẮT TẤT CẢ';
+
+    roomList.forEach(room => {
+      const cur = roomStatuses[room.key] || {};
+      if(hasAnyOff){
+        roomStatuses[room.key] = { ...(roomStatuses[room.key] || {}), power: 'on', temp: cur.temp || 26, lastUpdated: new Date().toLocaleTimeString('vi-VN') + ' (Vừa gửi)' };
+      } else {
+        roomStatuses[room.key] = { ...(roomStatuses[room.key] || {}), power: 'off', swing: 'off', quickCool: false, lastUpdated: new Date().toLocaleTimeString('vi-VN') + ' (Vừa gửi)' };
+      }
+      executeSendMqtt(room.key, targetAction);
+    });
+
+    addHistoryLog(`🚀 ${actionText} máy lạnh (${roomList.length} phòng)`);
+    saveState(true);
+    showToast(`Đã ${actionText.toLowerCase()} (${roomList.length} phòng)!`);
   };
 
   window.changeTemp = function(key, delta){
@@ -924,21 +1015,48 @@
     client.publish(rooms[key].controlTopic, cmd, { qos: 0 });
   }
 
+  function updateOnlineUsersDisplay(){
+    const now = Date.now();
+    for(let [cid, time] of activeClients.entries()){
+      if(now - time > 15000){
+        activeClients.delete(cid);
+      }
+    }
+    const count = Math.max(1, activeClients.size);
+    $('onlineBadge').textContent = `👥 ${count} người online`;
+  }
+
   function connectMqtt(){
     $('mqttBadge').className = 'badge badge-connecting';$('mqttBadge').textContent = 'Đang kết nối MQTT...';
     const brokerUrl = 'wss://broker.hivemq.com:8884/mqtt';
-    const clientId = 'funiki_web_' + Math.random().toString(16).slice(2, 10);
+    const myTopic = TOPIC_PRESENCE_PREFIX + myClientId;
+
     try{ if(client) client.end(true); }catch(e){}
-    client = mqtt.connect(brokerUrl, { clientId, clean: true, connectTimeout: 10000, reconnectPeriod: 5000, keepalive: 30 });
+    client = mqtt.connect(brokerUrl, {
+      clientId: myClientId,
+      clean: true,
+      connectTimeout: 10000,
+      reconnectPeriod: 5000,
+      keepalive: 30,
+      will: {
+        topic: myTopic,
+        payload: 'offline',
+        qos: 0,
+        retain: true
+      }
+    });
 
     client.on('connect', () => {
       isMqttConnected = true;
       $('mqttBadge').className = 'badge badge-connected';$('mqttBadge').textContent = '🟢 MQTT Đã kết nối';
       
-      // Đăng ký nhận cấu hình danh sách phòng + lịch sử toàn cầu từ MQTT Broker
       client.subscribe(TOPIC_SYNC_ROOMS, { qos: 0 });
+      client.subscribe(TOPIC_SYNC_STATUSES, { qos: 0 });
       client.subscribe(TOPIC_SYNC_HISTORY, { qos: 0 });
+      client.subscribe(TOPIC_PRESENCE_PREFIX + '+', { qos: 0 });
       
+      client.publish(myTopic, 'online', { qos: 0, retain: true });
+
       updateSubscriptions();
     });
 
@@ -955,20 +1073,40 @@
     client.on('message', (topic, message) => {
       const payload = message.toString();
 
-      // ĐỒNG BỘ DANH SÁCH PHÒNG TỪ CÁC THIẾT BỊ KHÁC
+      if(topic.startsWith(TOPIC_PRESENCE_PREFIX)){
+        const cid = topic.replace(TOPIC_PRESENCE_PREFIX, '');
+        if(payload === 'online'){
+          activeClients.set(cid, Date.now());
+        }else if(payload === 'offline'){
+          activeClients.delete(cid);
+        }
+        updateOnlineUsersDisplay();
+        return;
+      }
+
       if(topic === TOPIC_SYNC_ROOMS){
         try{
           const remoteRooms = JSON.parse(payload);
           if(remoteRooms && typeof remoteRooms === 'object' && Object.keys(remoteRooms).length > 0){
             rooms = remoteRooms;
-            saveState(false); // Lưu local nhưng không publish lại
+            saveState(false);
             updateSubscriptions();
           }
         }catch(e){}
         return;
       }
 
-      // ĐỒNG BỘ LỊCH SỬ THAO TÁC TỪ CÁC THIẾT BỊ KHÁC
+      if(topic === TOPIC_SYNC_STATUSES){
+        try{
+          const remoteStatuses = JSON.parse(payload);
+          if(remoteStatuses && typeof remoteStatuses === 'object'){
+            roomStatuses = remoteStatuses;
+            saveState(false);
+          }
+        }catch(e){}
+        return;
+      }
+
       if(topic === TOPIC_SYNC_HISTORY){
         try{
           const remoteHistory = JSON.parse(payload);
@@ -981,7 +1119,6 @@
         return;
       }
 
-      // LẮNG NGHE STATUS TỪ ESP CỦA TỪNG PHÒNG
       const found = Object.values(rooms).find(r => r.statusTopic === topic);
       if(!found) return;
       try{
@@ -1007,6 +1144,19 @@
     if(!client || !isMqttConnected) return;
     Object.values(rooms).forEach(r => client.subscribe(r.statusTopic, { qos: 0 }));
   }
+
+  setInterval(() => {
+    if(client && isMqttConnected){
+      client.publish(TOPIC_PRESENCE_PREFIX + myClientId, 'online', { qos: 0, retain: true });
+    }
+    updateOnlineUsersDisplay();
+  }, 5000);
+
+  window.addEventListener('beforeunload', () => {
+    if(client && isMqttConnected){
+      client.publish(TOPIC_PRESENCE_PREFIX + myClientId, 'offline', { qos: 0, retain: true });
+    }
+  });
 
   window.reconnectMqtt = connectMqtt;
 
